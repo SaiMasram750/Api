@@ -6,3 +6,4 @@ pandas
 mne
 python-multipart
 supabase
+setuptools==65.5.0
