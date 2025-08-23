@@ -1,57 +1,23 @@
-from fastapi import FastAPI, File, UploadFile, Header, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-import numpy as np
-import tensorflow as tf
-import os
-from preprocess import preprocess_csv
-from supabase_logger import log_prediction
+import streamlit as st
+import requests
 
+st.title("🧠 Schizophrenia Detection from EEG")
 
-# Load model
-MODEL_PATH = "schizophrenia_detection_model.h5"
-model = tf.keras.models.load_model(MODEL_PATH)
+# File uploader
+uploaded_file = st.file_uploader("Upload EEG file (.csv or .edf)", type=["csv", "edf"])
 
-# API key from environment
-API_KEY = os.getenv("API_KEY", "my-secret-key")
+# Prediction button
+if uploaded_file is not None and st.button("Predict"):
+    with st.spinner("Sending file to backend..."):
+        url = "https://hackethon-production.up.railway.app/predict"
+        headers = {"x-api-key": "my-secret-key"}
+        files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
 
-app = FastAPI()
+        response = requests.post(url, headers=headers, files=files)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Replace with ["https://lovable.ai"] in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
-
-@app.post("/predict")
-async def predict(file: UploadFile = File(...), x_api_key: str = Header(...)):
-    if x_api_key != API_KEY:
-        raise HTTPException(status_code=403, detail="Invalid API Key")
-
-    contents = await file.read()
-    filename = file.filename.lower()
-
-    if filename.endswith(".csv"):
-        eeg_data = preprocess_csv(contents)
-    elif filename.endswith(".edf"):
-        eeg_data = preprocess_edf(contents)
-    else:
-        raise HTTPException(status_code=400, detail="Unsupported file type")
-
-    eeg_array = np.array(eeg_data, dtype=float)[:252].reshape(1, 252, 1)
-    y_pred = model.predict(eeg_array)
-    predicted_class = int(np.argmax(y_pred))
-    probabilities = y_pred.tolist()
-
-    log_prediction(filename, eeg_array.tolist(), predicted_class, probabilities)
-
-    return {
-        "filename": filename,
-        "class": predicted_class,
-        "probabilities": probabilities
-    }
+        if response.status_code == 200:
+            result = response.json()
+            st.success(f"Prediction: Class {result['class']}")
+            st.write("Probabilities:", result["probabilities"])
+        else:
+            st.error(f"Error: {response.text}")
